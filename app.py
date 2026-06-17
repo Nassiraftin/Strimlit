@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─── CSS — Netflix dark theme ─────────────────────────────────────────
+# ─── CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 html, body, [data-testid="stAppViewContainer"] { background:#141414 !important; color:#fff; }
@@ -45,7 +45,8 @@ html, body, [data-testid="stAppViewContainer"] { background:#141414 !important; 
              letter-spacing:.8px; margin-bottom:6px; }
 .kpi-value { font-size:1.6rem; font-weight:800; }
 
-.res-card   { border-radius:14px; padding:28px 24px; text-align:center; margin-bottom:16px; }
+.res-card   { border-radius:14px; padding:28px 24px;
+              text-align:center; margin-bottom:16px; }
 .res-churn  { background:linear-gradient(135deg,#E50914,#7a0000);
               box-shadow:0 6px 32px rgba(229,9,20,.5); }
 .res-medium { background:linear-gradient(135deg,#F5A623,#a86e00);
@@ -55,7 +56,8 @@ html, body, [data-testid="stAppViewContainer"] { background:#141414 !important; 
 .res-icon  { font-size:3.2rem; margin-bottom:6px; }
 .res-title { font-size:1.6rem; font-weight:900; color:#fff; margin-bottom:4px; }
 .res-prob  { font-size:1.05rem; color:rgba(255,255,255,.88); }
-.res-tier  { font-size:.9rem; color:rgba(255,255,255,.75); margin-top:6px; font-weight:700; }
+.res-tier  { font-size:.9rem; color:rgba(255,255,255,.75);
+             margin-top:6px; font-weight:700; }
 
 .sec-hdr {
   font-size:.82rem; font-weight:700; color:#E50914;
@@ -80,7 +82,8 @@ html, body, [data-testid="stAppViewContainer"] { background:#141414 !important; 
 }
 .stButton > button:hover { transform:translateY(-2px) !important; }
 
-.stTabs [data-baseweb="tab-list"] { background:#000; border-bottom:1px solid #2a2a2a; }
+.stTabs [data-baseweb="tab-list"] { background:#000;
+                                    border-bottom:1px solid #2a2a2a; }
 .stTabs [data-baseweb="tab"]      { color:#888 !important; }
 .stTabs [aria-selected="true"]    { color:#E50914 !important;
                                     border-bottom:2px solid #E50914 !important; }
@@ -90,14 +93,13 @@ html, body, [data-testid="stAppViewContainer"] { background:#141414 !important; 
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  TRAIN MODEL AT STARTUP (cached — runs once, version-safe)
+#  TRAIN MODEL AT STARTUP  (cached — runs once, always version-safe)
 # ═══════════════════════════════════════════════════════════════════════
 @st.cache_resource(show_spinner="🎬 Training model on Netflix data…")
 def train_model():
     BASE = os.path.dirname(__file__)
     df = pd.read_excel(os.path.join(BASE, "netflix_large_user_data.xlsx"))
 
-    # Clean column names
     df.columns = (df.columns.str.strip().str.lower()
                   .str.replace(r"[\s/()]+", "_", regex=True)
                   .str.replace(r"[^a-z0-9_]", "", regex=True)
@@ -106,20 +108,20 @@ def train_model():
     PAY_COL    = "payment_history_ontime_delayed"
     INCOME_COL = "monthly_income"
 
-    # Binary targets
-    df["churn"]           = (df["churn_status_yes_no"].str.strip().str.lower() == "yes").astype(int)
-    df["payment_delayed"] = (df[PAY_COL].str.strip().str.lower() == "delayed").astype(int)
+    df["churn"]           = (df["churn_status_yes_no"].str.strip().str.lower()
+                             == "yes").astype(int)
+    df["payment_delayed"] = (df[PAY_COL].str.strip().str.lower()
+                             == "delayed").astype(int)
 
-    # Feature engineering
     plan_order = {"Basic": 1, "Standard": 2, "Premium": 3}
     df["plan_encoded"] = df["subscription_plan"].map(plan_order)
 
-    sat_norm = 1 - (df["customer_satisfaction_score_110"] - 1) / 9
-    eng_norm = 1 - (df["engagement_rate_110"]             - 1) / 9
-    sub_risk = 1 - (df["subscription_length_months"] / 24)
-    df["risk_score"] = (sat_norm * 0.35 + eng_norm * 0.30
+    sat_n = 1 - (df["customer_satisfaction_score_110"] - 1) / 9
+    eng_n = 1 - (df["engagement_rate_110"]             - 1) / 9
+    sub_r = 1 - (df["subscription_length_months"] / 24)
+    df["risk_score"] = (sat_n * 0.35 + eng_n * 0.30
                         + df["payment_delayed"] * 0.20
-                        + sub_risk.clip(0, 1) * 0.15).round(4)
+                        + sub_r.clip(0, 1) * 0.15).round(4)
 
     feature_cols = [
         "subscription_length_months", "customer_satisfaction_score_110",
@@ -147,10 +149,9 @@ def train_model():
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.30, stratify=y, random_state=42)
 
-    smote = SMOTE(random_state=42)
-    X_res, y_res = smote.fit_resample(X_train, y_train)
+    X_res, y_res = SMOTE(random_state=42).fit_resample(X_train, y_train)
 
-    scaler = StandardScaler()
+    scaler     = StandardScaler()
     X_train_sc = scaler.fit_transform(X_res)
     X_test_sc  = scaler.transform(X_test)
 
@@ -162,15 +163,6 @@ def train_model():
     yp    = rf.predict(X_test_sc)
     yprob = rf.predict_proba(X_test_sc)[:, 1]
 
-    metrics = {
-        "accuracy":  float(accuracy_score(y_test, yp)),
-        "precision": float(precision_score(y_test, yp)),
-        "recall":    float(recall_score(y_test, yp)),
-        "f1":        float(f1_score(y_test, yp)),
-        "auc":       float(roc_auc_score(y_test, yprob)),
-    }
-
-    # Category values for dropdowns
     cat_info = {}
     for col in [PAY_COL, "subscription_plan", "device_used_most_often",
                 "genre_preference", "region"]:
@@ -178,7 +170,11 @@ def train_model():
             cat_info[col] = sorted(df[col].dropna().unique().tolist())
 
     meta = {
-        **metrics,
+        "accuracy":        float(accuracy_score(y_test, yp)),
+        "precision":       float(precision_score(y_test, yp)),
+        "recall":          float(recall_score(y_test, yp)),
+        "f1":              float(f1_score(y_test, yp)),
+        "auc":             float(roc_auc_score(y_test, yprob)),
         "total_customers": len(df),
         "churn_rate":      float(df["churn"].mean()),
         "age_min":         int(df["age"].min()),
@@ -187,18 +183,15 @@ def train_model():
         "income_max":      int(df[INCOME_COL].max()),
         "income_mean":     float(df[INCOME_COL].mean()),
         "cat_info":        cat_info,
-        "income_col":      INCOME_COL,
         "pay_col":         PAY_COL,
     }
-
     return rf, scaler, feat_names, meta
 
 
 model, scaler, FEAT_NAMES, META = train_model()
-CAT_INFO = META["cat_info"]
-
-# ─── Constants ─────────────────────────────────────────────────────────
+CAT_INFO   = META["cat_info"]
 PLAN_ORDER = {"Basic": 1, "Standard": 2, "Premium": 3}
+
 INTERVENTIONS = {
     "High Risk":   ("🚨 Retention Campaign A",
                     "Immediate personal outreach + exclusive discount offer + "
@@ -217,7 +210,6 @@ def assign_tier(prob):
     return               "Low Risk",    "#27AE60", "res-safe",   "✅"
 
 
-# ─── Feature builder ───────────────────────────────────────────────────
 def build_row(inp):
     pay_del  = 1 if inp["payment"] == "Delayed" else 0
     plan_enc = PLAN_ORDER.get(inp["plan"], 1)
@@ -240,8 +232,6 @@ def build_row(inp):
         "plan_encoded":                     plan_enc,
         "risk_score":                       risk_sc,
     }
-
-    # One-hot dummies (drop_first=True → alphabetically first dropped)
     dummies = {
         "subscription_plan":      ("Basic",   ["Premium", "Standard"]),
         "device_used_most_often": ("Desktop", ["Laptop", "Mobile", "Smart TV", "Tablet"]),
@@ -305,24 +295,20 @@ with st.sidebar:
     st.markdown("---")
     st.button("🔍  PREDICT CHURN RISK", use_container_width=True)
 
-# Bundle inputs
 inputs = dict(
     age=age, income=income, region=region,
     plan=plan, sub_len=sub_len, payment=payment,
     promo=promo, profiles=profiles, watch_time=watch_time,
-    engagement=engagement, satisfaction=satisfaction,
-    support_q=support_q,
-    subscription_plan=plan,
-    device_used_most_often=device,
-    genre_preference=genre,
+    engagement=engagement, satisfaction=satisfaction, support_q=support_q,
+    subscription_plan=plan, device_used_most_often=device, genre_preference=genre,
 )
 
 # ══════════════════════════════════════════════════════════════════════
-#  HERO
+#  HERO  (uses plain variables — no .format(**META) to avoid KeyError)
 # ══════════════════════════════════════════════════════════════════════
-acc_pct = META["accuracy"] * 100
-auc_val = META["auc"]
-f1_val  = META["f1"]
+_auc = META["auc"]
+_f1  = META["f1"]
+_acc = META["accuracy"] * 100
 
 st.markdown(f"""
 <div class="hero">
@@ -331,9 +317,9 @@ st.markdown(f"""
     <p class="hero-title">Netflix Customer Churn Predictor</p>
     <p class="hero-sub">
       Random Forest (Tuned) ★ &nbsp;|&nbsp;
-      AUC-ROC: {auc_val:.4f} &nbsp;|&nbsp;
-      F1-Score: {f1_val:.4f} &nbsp;|&nbsp;
-      Accuracy: {acc_pct:.1f}%
+      AUC-ROC: {_auc:.4f} &nbsp;|&nbsp;
+      F1-Score: {_f1:.4f} &nbsp;|&nbsp;
+      Accuracy: {_acc:.1f}%
     </p>
   </div>
 </div>
@@ -366,8 +352,9 @@ prob             = float(model.predict_proba(scaled)[0][1])
 pred             = int(model.predict(scaled)[0])
 tier, tier_colour, res_cls, tier_icon = assign_tier(prob)
 int_title, int_text = INTERVENTIONS[tier]
-label = "LIKELY TO CHURN" if pred == 1 else (
-        "MODERATE CHURN RISK" if tier == "Medium Risk" else "LIKELY TO STAY")
+label = ("LIKELY TO CHURN"    if pred == 1 else
+         "MODERATE CHURN RISK" if tier == "Medium Risk" else
+         "LIKELY TO STAY")
 
 left, right = st.columns([1, 1], gap="large")
 
@@ -396,7 +383,7 @@ with left:
     st.dataframe(pd.DataFrame({
         "Tier":        ["🔴 High Risk", "🟡 Medium Risk", "🟢 Low Risk"],
         "Probability": ["≥ 70%", "40%–69%", "< 40%"],
-        "Action":      ["Campaign A – Personal outreach",
+        "Action":      ["Campaign A – Personal outreach + discount",
                         "Campaign B – Email + loyalty reward",
                         "Standard experience"],
     }), hide_index=True, use_container_width=True)
@@ -413,9 +400,9 @@ with right:
             "bar":  {"color": tier_colour, "thickness": .3},
             "bgcolor": "#1a1a1a", "bordercolor": "#333",
             "steps": [
-                {"range": [0,   40],  "color": "#0a2018"},
-                {"range": [40,  70],  "color": "#221800"},
-                {"range": [70, 100],  "color": "#1f0000"},
+                {"range": [0,   40], "color": "#0a2018"},
+                {"range": [40,  70], "color": "#221800"},
+                {"range": [70, 100], "color": "#1f0000"},
             ],
             "threshold": {"line": {"color": "#fff", "width": 3},
                           "thickness": .85, "value": prob * 100},
@@ -444,8 +431,10 @@ with right:
     ))
     fig_b.update_layout(
         paper_bgcolor="#141414", plot_bgcolor="#1a1a1a", font_color="#fff",
-        height=230, xaxis=dict(range=[0, 1.35], gridcolor="#333"),
-        yaxis=dict(gridcolor="#333"), margin=dict(l=10, r=40, t=8, b=8),
+        height=240,
+        xaxis=dict(range=[0, 1.35], gridcolor="#333"),
+        yaxis=dict(gridcolor="#333"),
+        margin=dict(l=10, r=40, t=8, b=8),
     )
     st.plotly_chart(fig_b, use_container_width=True)
 
@@ -453,7 +442,8 @@ with right:
 #  TABS
 # ══════════════════════════════════════════════════════════════════════
 st.markdown("<br>", unsafe_allow_html=True)
-tab1, tab2, tab3 = st.tabs(["📊  Model Performance", "🔍  Feature Importance", "📖  How to Use"])
+tab1, tab2, tab3 = st.tabs(
+    ["📊  Model Performance", "🔍  Feature Importance", "📖  How to Use"])
 
 with tab1:
     st.markdown("### All-Model Comparison")
@@ -467,6 +457,8 @@ with tab1:
         "AUC-ROC":   [.4280, .5012, .5109, META["auc"]],
     })
     metrics_list = ["Accuracy", "Precision", "Recall", "F1-Score", "AUC-ROC"]
+
+    # Grouped bar chart
     fig_cmp = go.Figure()
     for i, row in perf.iterrows():
         fig_cmp.add_trace(go.Bar(
@@ -487,17 +479,17 @@ with tab1:
         margin=dict(l=10, r=10, t=50, b=10),
     )
     st.plotly_chart(fig_cmp, use_container_width=True)
-    st.dataframe(
-        perf.set_index("Model").style
-            .background_gradient(cmap="RdYlGn", subset=metrics_list, vmin=.4, vmax=.65)
-            .format("{:.4f}"),
-        use_container_width=True
-    )
+
+    # ── Plain formatted table — NO .background_gradient (requires matplotlib) ──
+    fmt = perf.set_index("Model").copy()
+    for col in metrics_list:
+        fmt[col] = fmt[col].map(lambda v: f"{v:.4f}")
+    st.dataframe(fmt, use_container_width=True)
 
 with tab2:
     st.markdown("### Feature Importances — Random Forest (Tuned) ★")
     fi = (pd.DataFrame({"Feature": FEAT_NAMES,
-                         "Importance": model.feature_importances_})
+                        "Importance": model.feature_importances_})
           .sort_values("Importance", ascending=True).tail(20))
     fig_fi = go.Figure(go.Bar(
         x=fi["Importance"], y=fi["Feature"], orientation="h",
@@ -507,7 +499,8 @@ with tab2:
     ))
     fig_fi.update_layout(
         paper_bgcolor="#141414", plot_bgcolor="#1a1a1a", font_color="#fff",
-        height=540, xaxis=dict(gridcolor="#333"),
+        height=540,
+        xaxis=dict(gridcolor="#333"),
         yaxis=dict(gridcolor="#333"),
         title=dict(text="Top Feature Importances (Mean Decrease in Gini Impurity)",
                    font={"color": "#fff"}),
@@ -524,7 +517,7 @@ with tab3:
 | Section | Fields |
 |---------|--------|
 | 👤 Customer Profile | Age, monthly income, region |
-| 📋 Subscription | Plan, length (months), payment history, promo offers, profiles |
+| 📋 Subscription | Plan, length, payment history, promo offers, profiles |
 | 📺 Engagement | Watch time, engagement & satisfaction (1–10), support queries, device, genre |
 
 **Step 2 — Prediction updates live** as you move any slider or dropdown.
@@ -532,19 +525,19 @@ with tab3:
 **Step 3 — Act on the result**
 
 | Tier | Probability | Strategy |
-|------|-------------|---------|
-| 🔴 High Risk | ≥ 70% | Personal outreach + immediate discount |
-| 🟡 Medium Risk | 40–69% | Targeted email + loyalty reward |
-| 🟢 Low Risk | < 40% | Standard experience |
+|------|-------------|----------|
+| 🔴 High Risk   | ≥ 70%    | Personal outreach + immediate discount |
+| 🟡 Medium Risk | 40%–69%  | Targeted email + loyalty reward |
+| 🟢 Low Risk    | < 40%    | Standard experience |
 
 ---
 
 ### About the Model
-- **Algorithm:** Random Forest Classifier (100 trees, Gini criterion)
+- **Algorithm:** Random Forest (100 trees, Gini criterion, sqrt features)
 - **Preprocessing:** SMOTE oversampling → StandardScaler
-- **Split:** 70/30 stratified train/test
+- **Split:** 70 / 30 stratified train / test
 - **Dataset:** 1,000 Netflix subscribers → 28 engineered features
-- **Training:** Happens at app startup (cached) — always version-safe
+- **Training:** Runs at app startup via `@st.cache_resource` — fully version-safe, no pkl files needed
 """)
 
 # ── Footer ─────────────────────────────────────────────────────────────
